@@ -1,0 +1,16 @@
+# Binari & hasil build
+/multacode
+*.exe
+dist/
+
+# Dokumen lokal (spesifikasi internal, tidak ikut push)
+/plan.md
+
+# Local dev / editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
