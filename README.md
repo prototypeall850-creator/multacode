@@ -13,18 +13,35 @@ antara mode planning yang aman dan mode build. Sesi tersimpan lokal.
 Syarat: Go 1.27+ (Termux: `pkg install golang git`).
 
 ```sh
-git clone <url-repo-kamu> multacode
-cd multacode
-go build -o multacode ./cmd/multacode
-./multacode --help
+git clone <url-repo-kamu> ~/multacode
+cd ~/multacode
+go build -o multacode ./cmd/multacode   # 1. wajib: binary tidak ikut di-clone
 ```
 
-Jalankan di dalam project:
+Biar bisa dipanggil dari mana saja (Termux):
 
 ```sh
-./multacode                 # direktori saat ini
-./multacode /path/ke/proj   # project tertentu
+ln -s "$PWD/multacode" $PREFIX/bin/multacode   # 2. wajib (Termux)
+hash -r
 ```
+
+Di Linux umum (bukan Termux), ganti langkah 2 dengan:
+
+```sh
+ln -s "$PWD/multacode" ~/.local/bin/multacode  # pastikan ~/.local/bin ada di PATH
+```
+
+Lalu setup sekali seumur hidup, pakai dari folder mana pun:
+
+```sh
+multacode --setup   # 3. cukup sekali: bikin config global
+multacode           # 4. pakai dari folder mana pun (cd ~/1, ~/2, ...)
+```
+
+> `--setup` menyiapkan config global ikut standar XDG
+> (`~/.config/multacode/`, `~/.local/share/multacode/`) —
+> **cukup sekali**, berlaku untuk semua folder kerja.
+> Folder kerja tinggal `cd` + ketik `multacode`, tanpa setup ulang.
 
 Tanpa daemon, tanpa Docker, tanpa Node/Bun. Jalan di terminal sempit (40 kolom).
 
