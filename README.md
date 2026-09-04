@@ -13,7 +13,7 @@ antara mode planning yang aman dan mode build. Sesi tersimpan lokal.
 Syarat: Go 1.27+ (Termux: `pkg install golang git`).
 
 ```sh
-git clone <url-repo-kamu> ~/multacode
+git clone https://github.com/prototypeall850-creator/multacode.git
 cd ~/multacode
 go build -o multacode ./cmd/multacode   # 1. wajib: binary tidak ikut di-clone
 ```
