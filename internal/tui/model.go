@@ -308,21 +308,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case modelsFetchedMsg:
+		// Store fetched models in cache.
 		for id, models := range msg.models {
 			m.modelsCache[id] = models
 		}
+		// Report any fetch errors to user.
 		for id, errStr := range msg.errs {
 			if _, ok := msg.models[id]; !ok {
 				m.entries = append(m.entries, entry{role: "error", content: "models " + id + ": " + errStr})
 			}
 		}
+		// If /models was called without args, build and open the picker.
 		if m.pickerPending {
 			m.pickerPending = false
 			rows := m.buildPickerRows()
 			if len(rows) == 0 {
 				m.entries = append(m.entries, entry{role: "system", content: "No models listed. Check errors above, run `/doctor` for connectivity, or `/connect` to re-add the provider."})
 			} else {
-				m.picker = &modelsPicker{rows: rows}
+				// Initialize picker with proper state: cursor at 0, offset at 0.
+				m.picker = &modelsPicker{rows: rows, cursor: 0, offset: 0}
+				m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("Models picker opened. Use ↑↓/jk to navigate, enter to select, esc to close. (%d models)", len(rows))})
 			}
 		}
 		m.renderTranscript()
@@ -926,6 +931,8 @@ func (m Model) View() string {
 		statusRow = fmt.Sprintf("%s thinking… %d chars", m.sp.View(), len(strings.TrimSpace(m.assistantBuf)))
 	} else if m.connectSt != nil {
 		statusRow = hintStyle.Render("connect wizard • type answer or `cancel` • esc aborts")
+	} else if m.picker != nil {
+		statusRow = hintStyle.Render("models picker • ↑↓/jk move • enter select • esc close")
 	} else {
 		statusRow = hintStyle.Render(fmt.Sprintf("agent:%s • %s • tab switch • /help", m.agent, m.projectDir))
 	}
