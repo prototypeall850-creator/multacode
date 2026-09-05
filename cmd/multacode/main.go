@@ -114,7 +114,7 @@ Slash commands (inside TUI):
 // Only stale values are touched; user choices stay.
 func migrateDeadDefaults(cfg *config.Config) bool {
 	const live = "nemotron-3-ultra-free"
-	dead := map[string]bool{"glm-4.7-free": true}
+	dead := map[string]bool{"glm-4.7-free": true, "laguna-s-2.1-free": true}
 	changed := false
 	if dead[cfg.DefaultModel] {
 		cfg.DefaultModel = live

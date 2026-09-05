@@ -309,6 +309,10 @@ func hintForProviderError(s string) string {
 		strings.Contains(l, "connection") || strings.Contains(l, "resolve") ||
 		strings.Contains(l, "network") || strings.Contains(l, "no such host"):
 		return "hint: network issue — retry, or /doctor to check connectivity"
+	case strings.Contains(l, "429") || strings.Contains(l, "503") ||
+		strings.Contains(l, "502") || strings.Contains(l, "overload") ||
+		strings.Contains(l, "temporarily") || strings.Contains(l, "try again"):
+		return "hint: free tier overloaded — wait a bit and retry, or /models to switch model"
 	default:
 		return "hint: /doctor checks provider connectivity"
 	}

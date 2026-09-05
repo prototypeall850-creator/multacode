@@ -7,6 +7,7 @@ import (
 	"multacode/internal/config"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -267,5 +268,114 @@ func TestZenCustomBaseDerivesModelsURL(t *testing.T) {
 	}
 	if got := z.chatURL(); got != "https://opencode.ai/zen/go/v1/chat/completions" {
 		t.Fatalf("chat = %s", got)
+	}
+}
+
+func TestPumpSurfacesSSEError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"error\":{\"type\":\"server_error\",\"message\":\"Streaming response failed: [502] Upstream overloaded\"}}\n\n")
+	}))
+	defer srv.Close()
+	p := &OpenAICompatible{BaseURL: srv.URL, DefaultModel: "m", HTTP: testClient(srv)}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ch, err := p.Stream(ctx, ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var errs []error
+	for ev := range ch {
+		if ev.Type == "error" && ev.Err != nil {
+			errs = append(errs, ev.Err)
+		}
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "Upstream overloaded") {
+		t.Fatalf("errs = %v", errs)
+	}
+}
+
+func TestStreamRetriesSSEOverload(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		if calls == 1 {
+			fmt.Fprint(w, "data: {\"error\":{\"message\":\"Service temporarily overloaded\"}}\n\n")
+			return
+		}
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"recovered\"}}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	p := &OpenAICompatible{BaseURL: srv.URL, DefaultModel: "m", HTTP: testClient(srv)}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ch, err := p.Stream(ctx, ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	for ev := range ch {
+		got += ev.TextDelta
+		if ev.Type == "error" {
+			t.Fatalf("retryable error leaked: %v", ev.Err)
+		}
+	}
+	if got != "recovered" || calls != 2 {
+		t.Fatalf("got=%q calls=%d", got, calls)
+	}
+}
+
+func TestPumpMessageShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"message\":{\"content\":\"full\"}}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	p := &OpenAICompatible{BaseURL: srv.URL, DefaultModel: "m", HTTP: testClient(srv)}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ch, err := p.Stream(ctx, ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	for ev := range ch {
+		got += ev.TextDelta
+	}
+	if got != "full" {
+		t.Fatalf("got=%q", got)
+	}
+}
+
+func TestPumpEmptyStreamErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, ": keep-alive\n\n: keep-alive\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	p := &OpenAICompatible{BaseURL: srv.URL, DefaultModel: "m", HTTP: testClient(srv)}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	ch, err := p.Stream(ctx, ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var errs []error
+	for ev := range ch {
+		if ev.Type == "error" && ev.Err != nil {
+			errs = append(errs, ev.Err)
+		}
+		if ev.Type == "text_delta" {
+			t.Fatalf("unexpected text: %q", ev.TextDelta)
+		}
+	}
+	if len(errs) == 0 {
+		t.Fatal("keep-alive-only stream must surface an error, not silence")
+	}
+	if !isRetryableStreamErr(errs[0]) {
+		t.Fatalf("empty-stream error should be retryable, got %v", errs[0])
 	}
 }

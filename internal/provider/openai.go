@@ -190,15 +190,24 @@ func (o *OpenAICompatible) Stream(ctx context.Context, req ChatRequest) (<-chan 
 		body, _ = json.Marshal(payload)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	ch := make(chan Event, 32)
+	if !o.useResponses() {
+		// Chat mode: first request stays synchronous (transport/HTTP
+		// errors return immediately); the retry wrapper only re-issues
+		// on SSE-embedded overloads, while nothing was delivered yet.
+		resp, err := o.firstChatRequest(ctx, url, body)
+		if err != nil {
+			return nil, err
+		}
+		go o.forwardChatWithRetry(ctx, url, body, resp, ch)
+		return ch, nil
+	}
+
+	respReq, err := newChatHTTPRequest(ctx, url, body, o)
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-	o.setAuth(httpReq)
-
-	resp, err := o.doWithRetry(httpReq)
+	resp, err := o.doWithRetry(respReq)
 	if err != nil {
 		return nil, err
 	}
@@ -208,17 +217,106 @@ func (o *OpenAICompatible) Stream(ctx context.Context, req ChatRequest) (<-chan 
 		return nil, fmt.Errorf("provider %s: %s", resp.Status, strings.TrimSpace(string(errBody)))
 	}
 
-	ch := make(chan Event, 32)
 	go func() {
 		defer close(ch)
 		defer resp.Body.Close()
-		if o.useResponses() {
-			pumpResponsesSSE(ctx, resp.Body, ch)
-		} else {
-			pumpChatSSE(ctx, resp.Body, ch)
-		}
+		pumpResponsesSSE(ctx, resp.Body, ch)
 	}()
 	return ch, nil
+}
+
+func newChatHTTPRequest(ctx context.Context, url string, body []byte, o *OpenAICompatible) (*http.Request, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+	o.setAuth(httpReq)
+	return httpReq, nil
+}
+
+func (o *OpenAICompatible) firstChatRequest(ctx context.Context, url string, body []byte) (*http.Response, error) {
+	httpReq, err := newChatHTTPRequest(ctx, url, body, o)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := o.doWithRetry(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+		resp.Body.Close()
+		return nil, fmt.Errorf("provider %s: %s", resp.Status, strings.TrimSpace(string(errBody)))
+	}
+	return resp, nil
+}
+
+// forwardChatWithRetry pumps the first response, transparently re-issuing
+// the request when the gateway reports a retryable overload before any
+// text/tool output reached the user.
+func (o *OpenAICompatible) forwardChatWithRetry(ctx context.Context, url string, body []byte, first *http.Response, ch chan<- Event) {
+	defer close(ch)
+	send := func(ev Event) bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case ch <- ev:
+			return true
+		}
+	}
+	resp := first
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			httpReq, err := newChatHTTPRequest(ctx, url, body, o)
+			if err != nil {
+				send(Event{Type: "error", Err: err})
+				return
+			}
+			var err2 error
+			resp, err2 = o.doWithRetry(httpReq)
+			if err2 != nil {
+				send(Event{Type: "error", Err: err2})
+				return
+			}
+			if resp.StatusCode >= 400 {
+				errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+				resp.Body.Close()
+				send(Event{Type: "error", Err: fmt.Errorf("provider %s: %s", resp.Status, strings.TrimSpace(string(errBody)))})
+				return
+			}
+		}
+		inner := make(chan Event, 32)
+		go func() {
+			pumpChatSSE(ctx, resp.Body, inner)
+			close(inner)
+		}()
+		forwarded := false
+		retry := false
+		for ev := range inner {
+			if ev.Type == "error" && !forwarded && attempt < 2 && isRetryableStreamErr(ev.Err) {
+				retry = true // drain the rest, forward nothing
+				continue
+			}
+			if ev.Type == "text_delta" || ev.Type == "tool_call" {
+				forwarded = true
+			}
+			if !send(ev) {
+				resp.Body.Close()
+				return
+			}
+		}
+		resp.Body.Close()
+		if !retry {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(2<<attempt) * time.Second):
+		}
+	}
 }
 
 func messagesToInput(msgs []Message) string {
@@ -301,9 +399,51 @@ type chatChunk struct {
 				} `json:"function"`
 			} `json:"tool_calls"`
 		} `json:"delta"`
+		// Some gateways send full message objects instead of deltas.
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *Usage `json:"usage,omitempty"`
+}
+
+// sseError extracts gateways errors sent as HTTP-200 SSE payloads, e.g.
+// data: {"error":{"type":"server_error","message":"...overloaded"}}.
+// Without this such failures are silently dropped (empty response).
+func sseError(d string) error {
+	var v struct {
+		Error *struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(d), &v); err != nil || v.Error == nil {
+		return nil
+	}
+	msg := v.Error.Message
+	if msg == "" {
+		msg = v.Error.Type
+	}
+	if msg == "" {
+		msg = "unknown provider error"
+	}
+	return fmt.Errorf("provider: %s", msg)
+}
+
+// isRetryableStreamErr reports transient free-tier overloads worth an
+// automatic retry before the user ever sees an error.
+func isRetryableStreamErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	l := strings.ToLower(err.Error())
+	for _, s := range []string{"429", "502", "503", "overload", "temporarily", "try again later"} {
+		if strings.Contains(l, s) {
+			return true
+		}
+	}
+	return false
 }
 
 type pendingTool struct {
@@ -316,7 +456,15 @@ type pendingTool struct {
 func pumpChatSSE(ctx context.Context, r io.Reader, ch chan<- Event) {
 	pending := map[int]*pendingTool{}
 	order := []int{}
+	gotContent := false
+	gotError := false
 	send := func(ev Event) bool {
+		switch ev.Type {
+		case "text_delta", "tool_call":
+			gotContent = true
+		case "error":
+			gotError = true
+		}
 		select {
 		case <-ctx.Done():
 			return false
@@ -329,6 +477,12 @@ func pumpChatSSE(ctx context.Context, r io.Reader, ch chan<- Event) {
 			if d == "[DONE]" {
 				continue
 			}
+			if err := sseError(d); err != nil {
+				if !send(Event{Type: "error", Err: err}) {
+					return false
+				}
+				continue
+			}
 			var c chatChunk
 			if err := json.Unmarshal([]byte(d), &c); err != nil {
 				continue
@@ -338,8 +492,12 @@ func pumpChatSSE(ctx context.Context, r io.Reader, ch chan<- Event) {
 				continue
 			}
 			for _, ch_ := range c.Choices {
-				if ch_.Delta.Content != "" {
-					if !send(Event{Type: "text_delta", TextDelta: ch_.Delta.Content}) {
+				text := ch_.Delta.Content
+				if text == "" {
+					text = ch_.Message.Content
+				}
+				if text != "" {
+					if !send(Event{Type: "text_delta", TextDelta: text}) {
 						return false
 					}
 				}
@@ -369,6 +527,15 @@ func pumpChatSSE(ctx context.Context, r io.Reader, ch chan<- Event) {
 			Name:  p.name,
 			Input: json.RawMessage(p.args.String()),
 		}})
+	}
+	// A stream with zero usable output (stall/keep-alive-only/empty) must
+	// surface as an error, never a silent empty turn — unless cancelled.
+	if !gotContent && !gotError {
+		select {
+		case <-ctx.Done():
+		default:
+			send(Event{Type: "error", Err: fmt.Errorf("provider returned an empty stream (free tier likely overloaded)")})
+		}
 	}
 	send(Event{Type: "done"})
 }

@@ -300,7 +300,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		if !m.pendingOut {
-			m.entries = append(m.entries, entry{role: "system", content: "(empty response)"})
+			m.entries = append(m.entries, entry{role: "system", content: "(empty response — provider sent no text or tool call; retry, or /models to switch model)"})
 		}
 		m.finishGeneration()
 		m.persist()
