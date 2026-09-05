@@ -251,6 +251,10 @@ type modelsFetchedMsg struct {
 
 func (m *Model) runModelsArgs(args []string) tea.Cmd {
 	if len(args) == 0 {
+		if len(m.cfg.Providers) == 0 {
+			m.entries = append(m.entries, entry{role: "system", content: "No providers yet. Run `/connect new` first (Zen free tier needs no key), then `/models` again."})
+			return nil
+		}
 		m.entries = append(m.entries, entry{role: "system", content: "Fetching models…"})
 		m.pickerPending = true
 		return m.fetchModelsCmd()

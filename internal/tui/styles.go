@@ -31,4 +31,8 @@ var (
 	userStyle      = lipgloss.NewStyle().Bold(true).Foreground(cyan)
 	assistantStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	toolStyle      = lipgloss.NewStyle().Foreground(dimC)
+
+	suggestSelStyle = lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.Color("0")).
+			Background(cyan)
 )

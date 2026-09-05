@@ -25,13 +25,14 @@ Slash:
   /compact                   prune old tool output, keep summary
   /connect new                 add provider (wizard)
   /connect <id> <api-key>      update provider key
-  /models                      pick provider/model
+  /models                      pick provider/model (free first)
   /models <prov>[/<model>]     switch directly
   /soul /memory /permissions   context, memory, policy views
 
 Context:
   @file            attach file content to your message
   !command         run shell now, output joins context
+  / + ↑↓           max 5 command suggestions, tab/enter complete
   y / n            approve or deny a tool call (modal)
   edit (build)     agent edit shows diff, needs approval
 

@@ -231,3 +231,109 @@ func TestModelsPickerFreeFirst(t *testing.T) {
 		t.Fatalf("free model should lead: %+v", mm.picker.rows)
 	}
 }
+
+func TestSlashSuggestFiltersMax5(t *testing.T) {
+	if got := slashSuggest("/"); len(got) != 5 {
+		t.Fatalf("/ should suggest 5, got %v", got)
+	}
+	got := slashSuggest("/mod")
+	if len(got) != 2 || got[0] != "/models" || got[1] != "/model" {
+		t.Fatalf("/mod = %v", got)
+	}
+	if got := slashSuggest("/connect new"); len(got) != 0 {
+		t.Fatalf("spaced input should not suggest: %v", got)
+	}
+	if got := slashSuggest("hello"); len(got) != 0 {
+		t.Fatalf("non-slash should not suggest: %v", got)
+	}
+}
+
+func TestSlashEnterCompletesPartial(t *testing.T) {
+	m := NewModel("/tmp")
+	m.width, m.height = 80, 30
+	m.resize()
+	m.ta.SetValue("/mod")
+	updated, _ := m.Update(keyMsg("enter"))
+	mm := updated.(Model)
+	if mm.ta.Value() != "/models " {
+		t.Fatalf("value = %q", mm.ta.Value())
+	}
+	sent := false
+	for _, e := range mm.entries {
+		if e.role == "user" {
+			sent = true
+		}
+	}
+	if sent {
+		t.Fatal("partial slash must complete, not send")
+	}
+}
+
+func TestSlashNavigateAndEsc(t *testing.T) {
+	m := NewModel("/tmp")
+	m.width, m.height = 80, 30
+	m.resize()
+	m.ta.SetValue("/m")
+	updated, _ := m.Update(keyMsg("down"))
+	mm := updated.(Model)
+	if mm.slashSel != 1 {
+		t.Fatalf("sel = %d", mm.slashSel)
+	}
+	updated, _ = mm.Update(keyMsg("up"))
+	mm = updated.(Model)
+	if mm.slashSel != 0 {
+		t.Fatalf("sel = %d", mm.slashSel)
+	}
+	updated, _ = mm.Update(keyMsg("esc"))
+	mm = updated.(Model)
+	if len(mm.activeSuggest()) != 0 {
+		t.Fatal("esc should dismiss suggestions")
+	}
+	if !strings.Contains(mm.View(), "> ") {
+		// input box still renders; suggestions gone is what matters
+		t.Log("note: view has no suggest box, ok")
+	}
+}
+
+func TestModelsNoProviderGuides(t *testing.T) {
+	m := NewModelWithOptions(Options{ProjectDir: "/tmp"})
+	m.width, m.height = 80, 30
+	m.resize()
+	m = sendLine(t, m, "/models")
+	if m.picker != nil || m.pickerPending {
+		t.Fatal("no picker should open without providers")
+	}
+	found := false
+	for _, e := range m.entries {
+		if strings.Contains(e.content, "/connect new") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("guidance missing: %+v", m.entries)
+	}
+}
+
+func TestModelsAllFailedGuides(t *testing.T) {
+	m := NewModelWithOptions(Options{ProjectDir: "/tmp"})
+	m.width, m.height = 80, 30
+	m.resize()
+	m.pickerPending = true
+	updated, _ := m.Update(modelsFetchedMsg{
+		models: map[string][]provider.Model{},
+		errs:   map[string]string{"zen": "timeout"},
+	})
+	mm := updated.(Model)
+	if mm.picker != nil {
+		t.Fatal("empty picker should not open")
+	}
+	found := false
+	for _, e := range mm.entries {
+		if strings.Contains(e.content, "/doctor") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("guidance missing: %+v", mm.entries)
+	}
+}

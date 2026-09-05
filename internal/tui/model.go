@@ -93,6 +93,10 @@ type Model struct {
 	// Milestone 6: session persistence.
 	sessionID  string
 	sessPicker *sessionPicker
+
+	// Slash autocomplete state.
+	slashSel int
+	slashOff bool // esc-dismissed until input changes
 }
 
 func NewModel(projectDir string) Model {
@@ -314,7 +318,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.pickerPending {
 			m.pickerPending = false
-			m.picker = &modelsPicker{rows: m.buildPickerRows()}
+			rows := m.buildPickerRows()
+			if len(rows) == 0 {
+				m.entries = append(m.entries, entry{role: "system", content: "No models listed. Check errors above, run `/doctor` for connectivity, or `/connect` to re-add the provider."})
+			} else {
+				m.picker = &modelsPicker{rows: rows}
+			}
 		}
 		m.renderTranscript()
 		return m, nil
@@ -546,6 +555,34 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Slash autocomplete: navigate/complete while typing "/...".
+	if sug := m.activeSuggest(); len(sug) > 0 {
+		if m.slashSel < 0 || m.slashSel >= len(sug) {
+			m.slashSel = 0
+		}
+		switch key {
+		case "up", "ctrl+p":
+			m.slashSel = (m.slashSel - 1 + len(sug)) % len(sug)
+			return m, nil
+		case "down", "ctrl+n":
+			m.slashSel = (m.slashSel + 1) % len(sug)
+			return m, nil
+		case "tab":
+			m.completeSuggest(sug)
+			return m, nil
+		case "enter":
+			// Exact command runs; partial input completes the selection.
+			if isExactSlashCommand(strings.TrimSpace(m.ta.Value())) {
+				break
+			}
+			m.completeSuggest(sug)
+			return m, nil
+		case "esc":
+			m.slashOff = true
+			return m, nil
+		}
+	}
+
 	switch key {
 	case "ctrl+c":
 		if m.generating {
@@ -642,6 +679,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.ta, cmd = m.ta.Update(msg)
+	m.slashOff = false // typing re-enables suggestions
+	if m.slashSel < 0 {
+		m.slashSel = 0
+	}
 	lines := strings.Count(m.ta.Value(), "\n") + 1
 	if lines < 1 {
 		lines = 1
@@ -893,11 +934,27 @@ func (m Model) View() string {
 	if panelW < 20 {
 		panelW = 20
 	}
+	suggestBox := ""
+	if sug := m.activeSuggest(); len(sug) > 0 {
+		sel := m.slashSel
+		if sel < 0 || sel >= len(sug) {
+			sel = 0
+		}
+		var sb strings.Builder
+		for i, c := range sug {
+			if i == sel {
+				sb.WriteString(suggestSelStyle.Render("> "+c) + "\n")
+			} else {
+				sb.WriteString(hintStyle.Render("  "+c) + "\n")
+			}
+		}
+		suggestBox = inputFrameStyle.Width(panelW).Render(strings.TrimRight(sb.String(), "\n")) + "\n"
+	}
 	inputBox := inputFrameStyle.Width(panelW).Render(m.ta.View())
 
-	help := hintStyle.Render("enter send • alt+enter newline • tab build/plan • ctrl+r tools • ctrl+h help • ctrl+c quit")
+	help := hintStyle.Render("enter send • / commands ↑↓+tab • tab build/plan • ctrl+r tools • ctrl+h help • ctrl+c quit")
 
-	parts := []string{"", top, mainBox, statusRow, inputBox, help}
+	parts := []string{"", top, mainBox, statusRow, suggestBox + inputBox, help}
 	return strings.Join(parts, "\n")
 }
 

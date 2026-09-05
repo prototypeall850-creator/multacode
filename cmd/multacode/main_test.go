@@ -77,3 +77,18 @@ func TestUpdateRefusesNonRepo(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestProgressBar(t *testing.T) {
+	b0 := progressBar(0, "pull")
+	if !strings.Contains(b0, "0%") || strings.Contains(b0, "█") {
+		t.Fatalf("bar0 = %q", b0)
+	}
+	b100 := progressBar(100, "done")
+	if !strings.Contains(b100, "100%") || strings.Count(b100, "█") != 20 {
+		t.Fatalf("bar100 = %q", b100)
+	}
+	b50 := progressBar(50, "x")
+	if strings.Count(b50, "█") != 10 {
+		t.Fatalf("bar50 = %q", b50)
+	}
+}
