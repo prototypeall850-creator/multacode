@@ -164,7 +164,7 @@ func TestCompactPrunes(t *testing.T) {
 	}
 	summary := false
 	for _, e := range m.entries {
-		if e.role == "system" && strings.Contains(e.content, "compacted") && strings.Contains(e.content, "f.go") {
+		if e.role == "system" && strings.Contains(strings.ToLower(e.content), "compacted") && strings.Contains(e.content, "f.go") {
 			summary = true
 		}
 	}
