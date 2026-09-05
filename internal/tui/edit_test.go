@@ -131,3 +131,62 @@ func TestPlanAgentCannotEdit(t *testing.T) {
 		t.Fatalf("block not recorded clearly: %+v", m.entries)
 	}
 }
+
+func TestCreateFileSkipsApproval(t *testing.T) {
+	root := editProject(t)
+	m := NewModelWithOptions(Options{ProjectDir: root})
+	m.width, m.height = 80, 30
+	m.resize()
+	m.prov = &scriptProvider{scripts: [][]provider.Event{
+		{{Type: "tool_call", ToolCall: provider.ToolCall{ID: "1", Name: "edit_file",
+			Input: []byte(`{"path":"kalkulator.html","create":true,"new":"<h1>hi</h1>"}`)}}},
+		{{Type: "text_delta", TextDelta: "done"}},
+	}}
+	m = sendLine(t, m, "buatkan kalkulator")
+	m = drainLoop(t, m)
+	if m.approval != nil {
+		t.Fatal("new file must not pop approval")
+	}
+	data, err := os.ReadFile(filepath.Join(root, "kalkulator.html"))
+	if err != nil || !strings.Contains(string(data), "<h1>hi</h1>") {
+		t.Fatalf("file not written: %v %q", err, data)
+	}
+}
+
+func TestCreateExistingStillAsks(t *testing.T) {
+	root := editProject(t)
+	m := NewModelWithOptions(Options{ProjectDir: root})
+	m.width, m.height = 80, 30
+	m.resize()
+	m.prov = &scriptProvider{scripts: [][]provider.Event{
+		{{Type: "tool_call", ToolCall: provider.ToolCall{ID: "1", Name: "edit_file",
+			Input: []byte(`{"path":"note.txt","create":true,"new":"x"}`)}}},
+		{{Type: "text_delta", TextDelta: "done"}},
+	}}
+	m = sendLine(t, m, "overwrite it")
+	m = pumpToApproval(t, m)
+	if m.approval == nil {
+		t.Fatal("clobbering an existing file must still ask")
+	}
+}
+
+func TestAutoCreatableGuards(t *testing.T) {
+	root := t.TempDir()
+	if isAutoCreatable(root, `{"path":"a/b.py","create":true}`) != true {
+		t.Fatal("nested new file should be creatable")
+	}
+	for _, in := range []string{
+		`{"path":"a.py"}`,                       // no create flag
+		`{"path":"../escape.py","create":true}`, // root escape
+		`{"path":"/abs.py","create":true}`,      // absolute
+		`not json`,                              // garbage
+	} {
+		if isAutoCreatable(root, in) {
+			t.Fatalf("must not autocreate: %s", in)
+		}
+	}
+	os.WriteFile(filepath.Join(root, "e.py"), []byte("x"), 0o644)
+	if isAutoCreatable(root, `{"path":"e.py","create":true}`) {
+		t.Fatal("existing file must not autocreate")
+	}
+}

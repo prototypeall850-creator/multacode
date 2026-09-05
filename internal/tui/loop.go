@@ -158,6 +158,30 @@ func quoteJSON(s string) string {
 	return string(b)
 }
 
+// isAutoCreatable reports whether an edit_file call creates a brand-new
+// file (create:true + path resolves inside root + not on disk yet).
+// Such calls skip the approval modal per user preference; anything else
+// (edits, overwrites, escapes) still asks.
+func isAutoCreatable(projectDir, input string) bool {
+	var v struct {
+		Path   string `json:"path"`
+		Create bool   `json:"create"`
+	}
+	if err := json.Unmarshal([]byte(input), &v); err != nil {
+		return false
+	}
+	if !v.Create || v.Path == "" || filepath.IsAbs(v.Path) {
+		return false
+	}
+	abs := filepath.Join(projectDir, filepath.Clean(v.Path))
+	rel, err := filepath.Rel(projectDir, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	_, err = os.Stat(abs)
+	return os.IsNotExist(err)
+}
+
 // processToolCalls drains one turn's tool calls through the permission
 // policy. Returns a command that continues the loop, or nil when the
 // loop pauses on an approval modal.
@@ -176,6 +200,12 @@ func (m *Model) processToolCalls() tea.Cmd {
 			m.entries = append(m.entries, entry{role: "tool", content: o})
 			m.loopMsgs = append(m.loopMsgs, provider.Message{Role: "user", Content: o})
 		case permission.Ask:
+			// New files are written immediately without asking (user
+			// choice): only edits to EXISTING files pop the modal.
+			if tc.Name == "edit_file" && isAutoCreatable(m.projectDir, tc.Input) {
+				m.execToolCall(tc.Name, tc.Input)
+				continue
+			}
 			m.approval = &pendingApproval{tool: tc.Name, input: tc.Input, queued: append([]providerToolCallMsg(nil), m.toolQueue...)}
 			m.toolQueue = nil
 			return nil
@@ -348,7 +378,7 @@ func (m *Model) renderApproval(width int) string {
 			if len(diff) > 1500 {
 				diff = diff[:1500] + "\n…(diff truncated)"
 			}
-			body += fmt.Sprintf("file:  %s\n\n%s\n", rel, diff)
+			body += fmt.Sprintf("file:  %s\n\n%s\n", rel, highlightCode("diff", diff))
 		}
 	} else {
 		preview := m.approval.input

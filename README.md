@@ -85,6 +85,8 @@ Tanpa daemon, tanpa Docker, tanpa Node/Bun. Jalan di terminal sempit (40 kolom).
 | Chat TUI | Transkrip Bubble Tea, output streaming, spinner, help (`ctrl+h`), layout ramah Termux sempit |
 | Provider | OpenAI-compatible (SSE chat + responses, tool call), Anthropic native, preset Zen/Go/OpenAI/Copilot/Anthropic/Google/Meta + custom; `/connect`, `/models` |
 | Agent loop | ReAct berbatas (16 langkah) dengan tool call, mode `build` vs `plan` (tab), eksekusi berizin |
+| File langsung jadi | Minta `kalkulator.html`/`.py`/`.sh` → agent wajib bikin via `edit_file`, file **baru langsung ditulis tanpa tanya**, edit file lama tetap approval diff |
+| Warna kode | Syntax highlighting (Chroma, gaya VSCode-dark) untuk blok kode di chat + preview diff |
 | Tool | `list/search/read` file (`rg` kalau ada), `run_shell` dengan timeout, `web_search` (Tavily/Brave/SearXNG), `web_fetch` dengan guard SSRF, `edit_file` dengan preview diff |
 | Keamanan | Kebijakan `allow/ask/deny`, modal approval (diff untuk edit), shell destruktif ditolak, path secret diblokir, secret disensor |
 | Konteks | `@file` lampirkan file, output `!cmd`, `SOUL.md` + `multa.md` (project & global), profil env Termux masuk system prompt |

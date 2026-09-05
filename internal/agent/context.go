@@ -76,7 +76,8 @@ func SystemPrompt(mode Mode, c PromptContext) string {
 		sb.WriteString("PLAN MODE: explore, explain, propose concrete diffs. Do NOT call edit tools; read-only inspection plus shell reads are allowed. ")
 	} else {
 		sb.WriteString("BUILD MODE: inspect, then make approved changes and verify with tests. Use tools instead of guessing file contents. ")
-		sb.WriteString("Edits: use edit_file with exact old/new strings (one unique match) or create:true for new files; the runtime shows your diff and asks the user before applying. ")
+		sb.WriteString("Edits: use edit_file with exact old/new strings (one unique match) or create:true for new files; edits to existing files show a diff and ask the user, new files are written immediately. ")
+		sb.WriteString("Whenever the user asks for a file (html, py, sh, any code), ALWAYS create it with edit_file — never print code and tell the user to copy-paste it. ")
 	}
 	sb.WriteString("Tool protocol: call one tool per step; read tool results and continue until the task is done or you are blocked. ")
 	sb.WriteString("Keep final answers short and Termux-friendly (narrow screen, no huge dumps). ")

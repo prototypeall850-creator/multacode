@@ -859,7 +859,7 @@ func (m *Model) renderTranscript() {
 		case "user":
 			sb.WriteString(userStyle.Render("› you: ") + e.content + "\n\n")
 		case "assistant":
-			sb.WriteString(assistantStyle.Render("◆ multacode: ") + "\n" + e.content + "\n\n")
+			sb.WriteString(assistantStyle.Render("◆ multacode: ") + "\n" + highlightFences(e.content) + "\n\n")
 		case "tool":
 			if !m.showTool {
 				sb.WriteString(toolStyle.Render("▸ tool (hidden, ctrl+r)") + "\n")
@@ -873,7 +873,7 @@ func (m *Model) renderTranscript() {
 		}
 	}
 	if m.generating && strings.TrimSpace(m.assistantBuf) != "" {
-		sb.WriteString(assistantStyle.Render("◆ multacode: ") + "\n" + strings.TrimSpace(m.assistantBuf) + "▌\n\n")
+		sb.WriteString(assistantStyle.Render("◆ multacode: ") + "\n" + highlightFences(strings.TrimSpace(m.assistantBuf)) + "▌\n\n")
 	}
 	m.vp.SetContent(strings.TrimRight(sb.String(), "\n"))
 	m.vp.GotoBottom()
