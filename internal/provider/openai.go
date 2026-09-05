@@ -121,6 +121,41 @@ func (o *OpenAICompatible) setAuth(req *http.Request) {
 	}
 }
 
+// doWithRetry replays the request on 429/503 (overloaded free tier),
+// up to 3 attempts. The body is replayable: callers pass bytes readers.
+func (o *OpenAICompatible) doWithRetry(httpReq *http.Request) (*http.Response, error) {
+	var bodyBytes []byte
+	if httpReq.Body != nil {
+		bodyBytes, _ = io.ReadAll(httpReq.Body)
+		httpReq.Body.Close()
+	}
+	var resp *http.Response
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if bodyBytes != nil {
+			httpReq.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			httpReq.ContentLength = int64(len(bodyBytes))
+		}
+		resp, err = o.client().Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != 429 && resp.StatusCode != 503 {
+			return resp, nil
+		}
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4*1024))
+		resp.Body.Close()
+		if attempt < 2 {
+			select {
+			case <-httpReq.Context().Done():
+				return nil, httpReq.Context().Err()
+			case <-time.After(time.Duration(2<<attempt) * time.Second):
+			}
+		}
+	}
+	return resp, nil // final 429/503 surfaces via the status>=400 handler
+}
+
 // Stream POSTs with stream:true and converts SSE chunks to Events.
 func (o *OpenAICompatible) Stream(ctx context.Context, req ChatRequest) (<-chan Event, error) {
 	model := req.Model
@@ -157,7 +192,7 @@ func (o *OpenAICompatible) Stream(ctx context.Context, req ChatRequest) (<-chan 
 	httpReq.Header.Set("Accept", "text/event-stream")
 	o.setAuth(httpReq)
 
-	resp, err := o.client().Do(httpReq)
+	resp, err := o.doWithRetry(httpReq)
 	if err != nil {
 		return nil, err
 	}

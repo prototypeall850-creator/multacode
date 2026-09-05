@@ -86,7 +86,11 @@ func (m *Model) answerConnect(text string) bool {
 		}
 		st.base = base
 		st.step = 3
-		m.entries = append(m.entries, entry{role: "system", content: "API key? (stored in auth.json, never in memory; enter = none)"})
+		if st.kind == "zen" {
+			m.entries = append(m.entries, entry{role: "system", content: "API key? (free tier works WITHOUT a key — enter = none, stored in auth.json if given)"})
+		} else {
+			m.entries = append(m.entries, entry{role: "system", content: "API key? (stored in auth.json, never in memory; enter = none)"})
+		}
 	case 3:
 		st.key = strings.TrimSpace(text)
 		m.redactLastUser()
@@ -135,7 +139,7 @@ func (m *Model) answerConnect(text string) bool {
 func defaultModelForKind(kind string) string {
 	switch kind {
 	case "zen":
-		return "deepseek-v4-flash-free"
+		return "nemotron-3-ultra-free"
 	case "anthropic":
 		return "claude-sonnet-4-6"
 	default:

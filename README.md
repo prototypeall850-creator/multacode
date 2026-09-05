@@ -71,7 +71,7 @@ Tanpa daemon, tanpa Docker, tanpa Node/Bun. Jalan di terminal sempit (40 kolom).
    atau endpoint apa pun yang kompatibel OpenAI), atau jalan pintas untuk
    yang sudah ada: `/connect <id> <api-key>`. Key tersimpan di `auth.json`,
    tidak pernah masuk log chat.
-2. Pilih model: `/models` (daftar live + picker) atau `/models zen/deepseek-v4-flash-free`.
+2. Pilih model: `/models` (daftar live + picker) atau `/models zen/nemotron-3-ultra-free`.
 3. Ngobrol. Lampirkan konteks dengan `@file`, jalankan perintah dengan `!ls`.
 4. Aksi mutasi selalu minta izin dulu: tekan `y` untuk setuju, `n` untuk tolak.
 
@@ -123,10 +123,10 @@ Tanpa daemon, tanpa Docker, tanpa Node/Bun. Jalan di terminal sempit (40 kolom).
 ```json
 {
   "default_provider": "zen",
-  "default_model": "deepseek-v4-flash-free",
+  "default_model": "nemotron-3-ultra-free",
   "providers": [
     {"id": "zen", "kind": "zen", "api_key_ref": "auth:zen",
-     "default_model": "deepseek-v4-flash-free"}
+     "default_model": "nemotron-3-ultra-free"}
   ],
   "permission": {"read": "allow", "search": "allow", "edit": "ask",
                  "shell": "ask", "delete": "ask"},

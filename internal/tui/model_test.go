@@ -129,7 +129,7 @@ func TestConnectWizardZen(t *testing.T) {
 	m = sendLine(t, m, "")    // kind -> default zen
 	m = sendLine(t, m, "")    // base -> zen default
 	m = sendLine(t, m, "k1")  // key (redacted)
-	m = sendLine(t, m, "")    // model -> default deepseek-v4-flash-free
+	m = sendLine(t, m, "")    // model -> default nemotron-3-ultra-free
 	if m.connectSt != nil {
 		t.Fatal("wizard should finish")
 	}
@@ -139,7 +139,7 @@ func TestConnectWizardZen(t *testing.T) {
 	if m.auth["zen"] != "k1" {
 		t.Fatalf("auth = %+v", m.auth)
 	}
-	if m.providerID != "zen" || m.modelID != "deepseek-v4-flash-free" {
+	if m.providerID != "zen" || m.modelID != "nemotron-3-ultra-free" {
 		t.Fatalf("active = %s/%s", m.providerID, m.modelID)
 	}
 	// Key must be redacted from transcript.

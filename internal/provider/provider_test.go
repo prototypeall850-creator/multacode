@@ -171,14 +171,80 @@ func TestResolveAPIKey(t *testing.T) {
 }
 
 func TestZenPreset(t *testing.T) {
-	z := ZenPreset("k", "")
-	if z.BaseURL != "https://opencode.ai/zen/v1/responses" {
+	z := ZenPreset("", "")
+	if z.BaseURL != "https://opencode.ai/zen/v1/chat/completions" {
 		t.Fatalf("base = %s", z.BaseURL)
 	}
 	if z.ModelsURL != "https://opencode.ai/zen/v1/models" {
 		t.Fatalf("models = %s", z.ModelsURL)
 	}
-	if !z.useResponses() {
-		t.Fatal("zen should use responses mode")
+	if z.useResponses() {
+		t.Fatal("zen free tier should use chat completions mode")
+	}
+	if z.DefaultModel != "nemotron-3-ultra-free" {
+		t.Fatalf("default = %s", z.DefaultModel)
+	}
+	if z.Headers["x-opencode-client"] != "cli" {
+		t.Fatalf("headers = %+v", z.Headers)
+	}
+}
+
+func TestOpenAIChatRetryOnOverload(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 3 {
+			w.WriteHeader(429)
+			fmt.Fprint(w, "overloaded")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	p := &OpenAICompatible{BaseURL: srv.URL, DefaultModel: "m", HTTP: testClient(srv)}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ch, err := p.Stream(ctx, ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	for ev := range ch {
+		got += ev.TextDelta
+	}
+	if got != "ok" || calls != 3 {
+		t.Fatalf("got=%q calls=%d", got, calls)
+	}
+}
+
+func TestZenKeylessHeaders(t *testing.T) {
+	var sawClient, sawAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawClient = r.Header.Get("x-opencode-client")
+		sawAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	z := ZenPreset("", "m")
+	z.BaseURL = srv.URL // chat mode (no /responses in URL)
+	z.HTTP = testClient(srv)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ch, err := z.Stream(ctx, ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	if sawClient != "cli" {
+		t.Fatalf("x-opencode-client = %q", sawClient)
+	}
+	if sawAuth != "" {
+		t.Fatalf("keyless zen must not send Authorization, got %q", sawAuth)
 	}
 }
