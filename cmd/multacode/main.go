@@ -58,6 +58,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "multacode: load config: %v\n", err)
 		os.Exit(1)
 	}
+	if migrateDeadDefaults(&cfg) {
+		if err := config.Save(paths.ConfigFile, cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "multacode: migrate config: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("config: dead default model replaced with nemotron-3-ultra-free")
+	}
 	auth, err := config.LoadAuth(paths.AuthFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "multacode: load auth: %v\n", err)
@@ -97,6 +104,25 @@ Flags:
 Slash commands (inside TUI):
   /help /connect /models /sessions /new /agent
   /permissions /soul /search /fetch /compact /doctor /exit`)
+}
+
+// migrateDeadDefaults swaps model IDs that no longer exist on Zen for a
+// live free model. Only exact dead IDs are touched; user choices stay.
+func migrateDeadDefaults(cfg *config.Config) bool {
+	const live = "nemotron-3-ultra-free"
+	dead := map[string]bool{"glm-4.7-free": true}
+	changed := false
+	if dead[cfg.DefaultModel] {
+		cfg.DefaultModel = live
+		changed = true
+	}
+	for i := range cfg.Providers {
+		if dead[cfg.Providers[i].DefaultModel] {
+			cfg.Providers[i].DefaultModel = live
+			changed = true
+		}
+	}
+	return changed
 }
 
 // runSetup is idempotent: it creates global XDG dirs and seed files once
