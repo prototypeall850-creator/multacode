@@ -82,7 +82,9 @@ func (m *Model) openSessionPicker() {
 		m.entries = append(m.entries, entry{role: "system", content: "sessions: none saved for this project yet"})
 		return
 	}
-	m.sessPicker = &sessionPicker{rows: rows}
+	// Initialize picker with cursor at 0 (most recent).
+	m.sessPicker = &sessionPicker{rows: rows, cursor: 0, offset: 0}
+	m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("Sessions picker opened. Use ↑↓/jk to navigate, enter to resume, d to delete, esc to close. (%d sessions)", len(rows))})
 }
 
 func firstLine(s string, n int) string {
@@ -121,12 +123,12 @@ func (m *Model) resumeSession(id string) {
 	m.sources = nil
 	m.sessPicker = nil
 	m.entries = append(m.entries, entry{role: "system",
-		content: fmt.Sprintf("resumed session %s (%d entries)", s.ID, len(s.Entries))})
+		content: fmt.Sprintf("✓ Resumed session %s (%d entries)", s.ID, len(s.Entries))})
 }
 
 func (m *Model) renderSessionPicker(width int) string {
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("sessions — enter resume • d delete • esc close") + "\n")
+	sb.WriteString(titleStyle.Render("sessions — ↑↓/jk move • enter resume • d delete • esc close") + "\n")
 	maxRows := 12
 	if m.height > 0 && m.height-14 < maxRows {
 		maxRows = m.height - 14
@@ -166,7 +168,7 @@ func (m *Model) deletePickedSession() {
 	if id == m.sessionID {
 		m.sessionID = ""
 	}
-	m.entries = append(m.entries, entry{role: "system", content: "deleted session " + id})
+	m.entries = append(m.entries, entry{role: "system", content: "✓ Deleted session " + id})
 	p.rows = append(p.rows[:p.cursor], p.rows[p.cursor+1:]...)
 	if p.cursor >= len(p.rows) && p.cursor > 0 {
 		p.cursor--
@@ -212,7 +214,7 @@ func (m *Model) runCompact() {
 	if len(fl) > 10 {
 		fl = append(fl[:10], "…")
 	}
-	summary := fmt.Sprintf("compacted %d entries (%d user, %d assistant, %d tool); kept last %d",
+	summary := fmt.Sprintf("✓ Compacted %d entries (%d user, %d assistant, %d tool); kept last %d",
 		len(m.entries), nUser, nAsst, nTool, window)
 	if len(fl) > 0 {
 		summary += "; files: " + strings.Join(fl, ", ")
@@ -251,7 +253,7 @@ func (m *Model) doctorCmd(width, height int) tea.Cmd {
 			p.OS, p.Arch, p.IsTermux, p.Shell, width, height)
 		for _, c := range []string{"go", "git", "rg", "curl", "pkg", "sh"} {
 			if _, err := exec.LookPath(c); err == nil {
-				fmt.Fprintf(&sb, "- tool %-4s ok\n", c)
+				fmt.Fprintf(&sb, "- tool %-4s ✓\n", c)
 			} else {
 				fmt.Fprintf(&sb, "- tool %-4s MISSING", c)
 				if c == "rg" {
@@ -279,7 +281,7 @@ func (m *Model) doctorCmd(width, height int) tea.Cmd {
 				fmt.Fprintf(&sb, "- provider %s: FAIL %s (%s)\n", pc.ID, err.Error(), hintForProviderError(err.Error()))
 				continue
 			}
-			fmt.Fprintf(&sb, "- provider %s: ok (%d model(s))\n", pc.ID, len(models))
+			fmt.Fprintf(&sb, "- provider %s: ✓ (%d model(s))\n", pc.ID, len(models))
 		}
 		if m.paths.SessionDir != "" {
 			n := session.CountForProject(m.paths.SessionDir, m.projectDir)
