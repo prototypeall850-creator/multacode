@@ -1,6 +1,10 @@
 module multacode
 
-go 1.27.1
+// Minimum versi yang memenuhi deps (bubbles butuh 1.24.2).
+// Sengaja tidak lebih tinggi: toolchain Go resmi tidak diterbitkan
+// untuk host android, jadi di Termux auto-download toolchain TIDAK
+// akan pernah berhasil — harus pakai Go lokal dari `pkg install golang`.
+go 1.24.2
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
