@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"multacode/internal/config"
 	"multacode/internal/session"
@@ -107,7 +108,10 @@ Slash commands (inside TUI):
 }
 
 // migrateDeadDefaults swaps model IDs that no longer exist on Zen for a
-// live free model. Only exact dead IDs are touched; user choices stay.
+// live free model, and clears the stale /responses BaseURL that old builds
+// saved as the Zen default (responses mode breaks the keyless free tier —
+// the default chat-completions endpoint applies when BaseURL is empty).
+// Only stale values are touched; user choices stay.
 func migrateDeadDefaults(cfg *config.Config) bool {
 	const live = "nemotron-3-ultra-free"
 	dead := map[string]bool{"glm-4.7-free": true}
@@ -119,6 +123,10 @@ func migrateDeadDefaults(cfg *config.Config) bool {
 	for i := range cfg.Providers {
 		if dead[cfg.Providers[i].DefaultModel] {
 			cfg.Providers[i].DefaultModel = live
+			changed = true
+		}
+		if cfg.Providers[i].Kind == "zen" && strings.Contains(cfg.Providers[i].BaseURL, "/responses") {
+			cfg.Providers[i].BaseURL = ""
 			changed = true
 		}
 	}

@@ -96,12 +96,15 @@ func TestProgressBar(t *testing.T) {
 func TestMigrateDeadDefaults(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DefaultModel = "glm-4.7-free"
-	cfg.Providers = []config.ProviderConfig{{ID: "zen", Kind: "zen", DefaultModel: "glm-4.7-free"}}
+	cfg.Providers = []config.ProviderConfig{{ID: "zen", Kind: "zen", DefaultModel: "glm-4.7-free", BaseURL: "https://opencode.ai/zen/v1/responses"}}
 	if !migrateDeadDefaults(&cfg) {
 		t.Fatal("expected migration")
 	}
 	if cfg.DefaultModel != "nemotron-3-ultra-free" || cfg.Providers[0].DefaultModel != "nemotron-3-ultra-free" {
 		t.Fatalf("cfg = %+v", cfg)
+	}
+	if cfg.Providers[0].BaseURL != "" {
+		t.Fatalf("stale responses base must clear, got %q", cfg.Providers[0].BaseURL)
 	}
 	// User's live choice untouched.
 	cfg.DefaultModel = "mimo-v2.5-free"

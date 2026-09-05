@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"multacode/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -246,5 +247,25 @@ func TestZenKeylessHeaders(t *testing.T) {
 	}
 	if sawAuth != "" {
 		t.Fatalf("keyless zen must not send Authorization, got %q", sawAuth)
+	}
+}
+
+func TestZenCustomBaseDerivesModelsURL(t *testing.T) {
+	p, err := BuildProvider(config.ProviderConfig{
+		ID: "go", Kind: "zen", BaseURL: "https://opencode.ai/zen/go/v1",
+		DefaultModel: "claude-sonnet-4-6",
+	}, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	z := p.(*OpenAICompatible)
+	if z.BaseURL != "https://opencode.ai/zen/go/v1" {
+		t.Fatalf("base = %s", z.BaseURL)
+	}
+	if got := z.modelsURL(); got != "https://opencode.ai/zen/go/v1/models" {
+		t.Fatalf("models = %s", got)
+	}
+	if got := z.chatURL(); got != "https://opencode.ai/zen/go/v1/chat/completions" {
+		t.Fatalf("chat = %s", got)
 	}
 }

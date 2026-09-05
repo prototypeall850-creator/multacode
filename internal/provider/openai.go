@@ -50,7 +50,13 @@ func (o *OpenAICompatible) modelsURL() string {
 	if o.ModelsURL != "" {
 		return o.ModelsURL
 	}
-	base := strings.TrimRight(o.BaseURL, "/")
+	return DeriveModelsURL(o.BaseURL)
+}
+
+// DeriveModelsURL maps a chat/base URL to its sibling /models endpoint
+// by stripping known suffixes to find the API root.
+func DeriveModelsURL(baseURL string) string {
+	base := strings.TrimRight(baseURL, "/")
 	// Strip known suffixes to find the API root.
 	for _, s := range []string{"/chat/completions", "/responses", "/v1/responses"} {
 		base = strings.TrimSuffix(base, s)

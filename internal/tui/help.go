@@ -23,9 +23,9 @@ Slash:
   /permissions /soul /search /fetch /compact /doctor /exit
   /sessions                  resume picker (enter resume, d delete)
   /compact                   prune old tool output, keep summary
-  /connect new               add provider (wizard)
+  /connect new               add provider (preset menu)
   /connect <id> <api-key>    update provider key
-  /models                    pick provider/model (free first)
+  /models                    pick provider/model (grouped per provider)
   /models <prov>[/<model>]   switch directly
   /soul /memory /permissions context, memory, policy views
 

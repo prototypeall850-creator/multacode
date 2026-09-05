@@ -67,11 +67,14 @@ Tanpa daemon, tanpa Docker, tanpa Node/Bun. Jalan di terminal sempit (40 kolom).
 
 ## Mulai cepat
 
-1. Tambah provider: di dalam TUI ketik `/connect new` (Zen, Anthropic,
-   atau endpoint apa pun yang kompatibel OpenAI), atau jalan pintas untuk
-   yang sudah ada: `/connect <id> <api-key>`. Key tersimpan di `auth.json`,
-   tidak pernah masuk log chat.
-2. Pilih model: `/models` (daftar live + picker) atau `/models zen/nemotron-3-ultra-free`.
+1. Tambah provider: di dalam TUI ketik `/connect new`, pilih dari menu
+   POPULAR (Opencode Zen gratis tanpa key, Opencode Go, OpenAI,
+   Github Copilot, Anthropic, Google, Meta) atau PROVIDER LAIN
+   (OpenAI/Anthropic-compatible dengan base URL sendiri). Jalan pintas
+   untuk yang sudah ada: `/connect <id> <api-key>`. Key tersimpan di
+   `auth.json`, tidak pernah masuk log chat.
+2. Pilih model: `/models` (daftar live per provider + picker) atau
+   `/models zen/nemotron-3-ultra-free`.
 3. Ngobrol. Lampirkan konteks dengan `@file`, jalankan perintah dengan `!ls`.
 4. Aksi mutasi selalu minta izin dulu: tekan `y` untuk setuju, `n` untuk tolak.
 
@@ -80,7 +83,7 @@ Tanpa daemon, tanpa Docker, tanpa Node/Bun. Jalan di terminal sempit (40 kolom).
 | Area | Isi |
 |---|---|
 | Chat TUI | Transkrip Bubble Tea, output streaming, spinner, help (`ctrl+h`), layout ramah Termux sempit |
-| Provider | OpenAI-compatible (SSE chat + responses, tool call), Anthropic native, preset OpenCode Zen; `/connect`, `/models` |
+| Provider | OpenAI-compatible (SSE chat + responses, tool call), Anthropic native, preset Zen/Go/OpenAI/Copilot/Anthropic/Google/Meta + custom; `/connect`, `/models` |
 | Agent loop | ReAct berbatas (16 langkah) dengan tool call, mode `build` vs `plan` (tab), eksekusi berizin |
 | Tool | `list/search/read` file (`rg` kalau ada), `run_shell` dengan timeout, `web_search` (Tavily/Brave/SearXNG), `web_fetch` dengan guard SSRF, `edit_file` dengan preview diff |
 | Keamanan | Kebijakan `allow/ask/deny`, modal approval (diff untuk edit), shell destruktif ditolak, path secret diblokir, secret disensor |

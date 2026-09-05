@@ -125,11 +125,10 @@ func TestConnectWizardZen(t *testing.T) {
 	if m.connectSt == nil {
 		t.Fatal("wizard should start")
 	}
-	m = sendLine(t, m, "zen") // id
-	m = sendLine(t, m, "")    // kind -> default zen
-	m = sendLine(t, m, "")    // base -> zen default
-	m = sendLine(t, m, "k1")  // key (redacted)
-	m = sendLine(t, m, "")    // model -> default nemotron-3-ultra-free
+	m = sendLine(t, m, "1")  // pick: Opencode Zen (free)
+	m = sendLine(t, m, "")   // base -> zen default
+	m = sendLine(t, m, "k1") // key (redacted)
+	m = sendLine(t, m, "")   // model -> default nemotron-3-ultra-free
 	if m.connectSt != nil {
 		t.Fatal("wizard should finish")
 	}
@@ -335,5 +334,63 @@ func TestModelsAllFailedGuides(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("guidance missing: %+v", mm.entries)
+	}
+}
+
+func TestConnectMenuGroups(t *testing.T) {
+	menu := connectMenu()
+	for _, want := range []string{"POPULAR", "PROVIDER LAIN", "Opencode Zen (free)", "Opencode Go", "OpenAI", "Github Copilot", "Anthropic", "Google", "Meta", "OpenAI-compatible", "Anthropic-compatible"} {
+		if !strings.Contains(menu, want) {
+			t.Fatalf("menu missing %q:\n%s", want, menu)
+		}
+	}
+	if findPreset("1") == nil || findPreset("1").id != "zen" {
+		t.Fatal("preset 1 should be zen")
+	}
+	if findPreset("google") == nil || findPreset("google").base == "" {
+		t.Fatal("google preset needs a base")
+	}
+}
+
+func TestConnectWizardGoogle(t *testing.T) {
+	m := NewModelWithOptions(Options{ProjectDir: "/tmp"})
+	m.width, m.height = 80, 30
+	m.resize()
+	m = sendLine(t, m, "/connect new")
+	m = sendLine(t, m, "google")
+	m = sendLine(t, m, "")   // base -> preset default
+	m = sendLine(t, m, "gk") // key
+	m = sendLine(t, m, "")   // model -> preset default
+	if m.connectSt != nil {
+		t.Fatal("wizard should finish")
+	}
+	pc := m.cfg.Providers[0]
+	if pc.Kind != "openai-compatible" || pc.BaseURL == "" || pc.DefaultModel == "" {
+		t.Fatalf("pc = %+v", pc)
+	}
+	if m.auth["google"] != "gk" {
+		t.Fatalf("auth = %+v", m.auth)
+	}
+}
+
+func TestConnectWizardCustomRequiresBase(t *testing.T) {
+	m := NewModelWithOptions(Options{ProjectDir: "/tmp"})
+	m.width, m.height = 80, 30
+	m.resize()
+	m = sendLine(t, m, "/connect new")
+	m = sendLine(t, m, "8")       // oai-custom
+	m = sendLine(t, m, "myproxy") // custom id
+	m = sendLine(t, m, "")        // base empty -> must stay in wizard
+	if m.connectSt == nil || m.connectSt.step != 2 {
+		t.Fatalf("wizard must reject empty base, st=%+v", m.connectSt)
+	}
+	m = sendLine(t, m, "https://proxy.local/v1")
+	m = sendLine(t, m, "")
+	m = sendLine(t, m, "m1")
+	if m.connectSt != nil {
+		t.Fatal("wizard should finish")
+	}
+	if m.cfg.Providers[0].ID != "myproxy" {
+		t.Fatalf("pc = %+v", m.cfg.Providers[0])
 	}
 }

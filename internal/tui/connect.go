@@ -16,17 +16,87 @@ import (
 
 // --- /connect wizard ---
 
+// connectPreset is one entry of the /connect menu. Base is the default
+// BaseURL saved for the provider ("" = preset built-in default).
+// KeyHint tells the user where to get the key; empty = no key needed.
+type connectPreset struct {
+	id      string
+	name    string
+	popular bool // false = under PROVIDER LAIN
+	kind    string
+	base    string
+	model   string
+	keyHint string
+	custom  bool // custom base/key/model: ask id + require base
+}
+
+var connectPresets = []connectPreset{
+	{id: "zen", name: "Opencode Zen (free)", popular: true, kind: "zen", base: "", model: "nemotron-3-ultra-free"},
+	{id: "go", name: "Opencode Go", popular: true, kind: "zen", base: "https://opencode.ai/zen/go/v1", model: "claude-sonnet-4-6", keyHint: "API key from opencode.ai (login → API keys, Go subscription)"},
+	{id: "openai", name: "OpenAI", popular: true, kind: "openai-compatible", base: "https://api.openai.com/v1", model: "gpt-4o-mini", keyHint: "sk-... from platform.openai.com → API keys"},
+	{id: "copilot", name: "Github Copilot", popular: true, kind: "openai-compatible", base: "https://api.githubcopilot.com", model: "gpt-4o", keyHint: "token from `gh auth token` (GitHub CLI, needs Copilot access) — experimental"},
+	{id: "anthropic", name: "Anthropic", popular: true, kind: "anthropic", base: "https://api.anthropic.com", model: "claude-sonnet-4-6", keyHint: "sk-ant-... from console.anthropic.com → API keys"},
+	{id: "google", name: "Google", popular: true, kind: "openai-compatible", base: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash", keyHint: "key from aistudio.google.com → Get API key"},
+	{id: "meta", name: "Meta", popular: true, kind: "openai-compatible", base: "https://api.meta.ai/v1", model: "muse-spark-1.3", keyHint: "MODEL_API_KEY from developer.meta.com"},
+	{id: "oai-custom", name: "OpenAI-compatible", popular: false, kind: "openai-compatible", keyHint: "API key for your endpoint (stored in auth.json; enter = none)", custom: true},
+	{id: "ant-custom", name: "Anthropic-compatible", popular: false, kind: "anthropic", keyHint: "API key for your endpoint (stored in auth.json; enter = none)", custom: true},
+}
+
+func findPreset(s string) *connectPreset {
+	s = strings.ToLower(strings.TrimSpace(s))
+	for i := range connectPresets {
+		if s == connectPresets[i].id || s == fmt.Sprint(presetNum(&connectPresets[i])) {
+			return &connectPresets[i]
+		}
+	}
+	return nil
+}
+
+func presetNum(p *connectPreset) int {
+	for i := range connectPresets {
+		if &connectPresets[i] == p {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+func connectMenu() string {
+	var sb strings.Builder
+	sb.WriteString("Pick a provider (number or id), or `cancel`.\nPOPULAR\n")
+	for i := range connectPresets {
+		p := &connectPresets[i]
+		if !p.popular {
+			continue
+		}
+		extra := ""
+		if p.keyHint == "" {
+			extra = " — no key needed"
+		}
+		fmt.Fprintf(&sb, "  %d) %s  %s%s\n", i+1, p.id, p.name, extra)
+	}
+	sb.WriteString("PROVIDER LAIN\n")
+	for i := range connectPresets {
+		p := &connectPresets[i]
+		if p.popular {
+			continue
+		}
+		fmt.Fprintf(&sb, "  %d) %s  %s (custom base URL)\n", i+1, p.id, p.name)
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
 type connectState struct {
-	step int // 0:id 1:kind 2:base 3:key 4:model
-	id   string
-	kind string
-	base string
-	key  string
+	step   int // 0:pick 1:id(custom) 2:base 3:key 4:model
+	preset *connectPreset
+	id     string
+	base   string
+	key    string
 }
 
 func (m *Model) startConnectWizard() {
 	m.connectSt = &connectState{step: 0}
-	m.entries = append(m.entries, entry{role: "system", content: "Connect a provider. Type `cancel` anytime. Provider id? (e.g. zen)"})
+	m.entries = append(m.entries, entry{role: "system", content: connectMenu()})
 }
 
 // answerConnect consumes a non-slash user message as a wizard answer.
@@ -42,7 +112,27 @@ func (m *Model) answerConnect(text string) bool {
 		return true
 	}
 	switch st.step {
-	case 0:
+	case 0: // pick preset
+		p := findPreset(text)
+		if p == nil {
+			m.entries = append(m.entries, entry{role: "system", content: "Unknown choice. Type a number (1-" + fmt.Sprint(len(connectPresets)) + ") or id, or `cancel`."})
+			return true
+		}
+		if findProvider(m.cfg.Providers, p.id) != nil && !p.custom {
+			m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("%q already added. Use `/connect %s <api-key>` to update its key.", p.id, p.id)})
+			return true
+		}
+		st.preset = p
+		if p.custom {
+			st.step = 1
+			m.entries = append(m.entries, entry{role: "system", content: "Provider id? (one word, e.g. myproxy — or `cancel`)"})
+			return true
+		}
+		st.id = p.id
+		st.step = 2
+		m.entries = append(m.entries, entry{role: "system", content: basePrompt(p, "")})
+		return true
+	case 1: // custom id
 		id := strings.TrimSpace(text)
 		if id == "" || strings.ContainsAny(id, " \t/") {
 			m.entries = append(m.entries, entry{role: "system", content: "Id must be one word (letters, digits, dash). Try again or `cancel`."})
@@ -53,92 +143,90 @@ func (m *Model) answerConnect(text string) bool {
 			return true
 		}
 		st.id = id
-		st.step = 1
-		m.entries = append(m.entries, entry{role: "system", content: "Kind? [openai-compatible | anthropic | zen] (default: zen)"})
-	case 1:
-		kind := strings.ToLower(strings.TrimSpace(text))
-		if kind == "" {
-			kind = "zen"
-		}
-		switch kind {
-		case "openai", "oai":
-			kind = "openai-compatible"
-		case "openai-compatible", "anthropic", "zen":
-		default:
-			m.entries = append(m.entries, entry{role: "system", content: "Unknown kind. Choose openai-compatible, anthropic, or zen."})
-			return true
-		}
-		st.kind = kind
 		st.step = 2
-		switch kind {
-		case "zen":
-			m.entries = append(m.entries, entry{role: "system", content: "Base URL? (enter = Zen default https://opencode.ai/zen/v1/responses)"})
-		case "anthropic":
-			m.entries = append(m.entries, entry{role: "system", content: "Base URL? (enter = https://api.anthropic.com)"})
-		default:
-			m.entries = append(m.entries, entry{role: "system", content: "Base URL? (e.g. https://openrouter.ai/api/v1 — required for openai-compatible)"})
-		}
-	case 2:
+		m.entries = append(m.entries, entry{role: "system", content: basePrompt(st.preset, "")})
+		return true
+	case 2: // base URL
 		base := strings.TrimSpace(text)
-		if st.kind == "openai-compatible" && base == "" {
-			m.entries = append(m.entries, entry{role: "system", content: "Base URL is required for openai-compatible. Try again or `cancel`."})
+		if base == "" {
+			base = st.preset.base
+		}
+		if base == "" && st.preset.kind == "openai-compatible" {
+			m.entries = append(m.entries, entry{role: "system", content: "Base URL is required (e.g. https://openrouter.ai/api/v1). Try again or `cancel`."})
 			return true
 		}
 		st.base = base
 		st.step = 3
-		if st.kind == "zen" {
-			m.entries = append(m.entries, entry{role: "system", content: "API key? (free tier works WITHOUT a key — enter = none, stored in auth.json if given)"})
-		} else {
-			m.entries = append(m.entries, entry{role: "system", content: "API key? (stored in auth.json, never in memory; enter = none)"})
-		}
-	case 3:
+		m.entries = append(m.entries, entry{role: "system", content: keyPrompt(st.preset)})
+		return true
+	case 3: // api key
 		st.key = strings.TrimSpace(text)
 		m.redactLastUser()
 		st.step = 4
-		def := defaultModelForKind(st.kind)
-		if def == "" {
-			m.entries = append(m.entries, entry{role: "system", content: "Default model? (e.g. gpt-4o-mini)"})
-		} else {
-			m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("Default model? (enter = %s)", def)})
-		}
-	case 4:
+		m.entries = append(m.entries, entry{role: "system", content: modelPrompt(st.preset)})
+		return true
+	case 4: // default model
 		model := strings.TrimSpace(text)
 		if model == "" {
-			model = defaultModelForKind(st.kind)
+			model = st.preset.model
 		}
-		pc := config.ProviderConfig{ID: st.id, Kind: st.kind, BaseURL: st.base, DefaultModel: model, APIKeyRef: "auth:" + st.id}
-		if st.kind == "zen" {
-			pc.Name = "OpenCode Zen"
-		}
-		m.cfg.Providers = append(m.cfg.Providers, pc)
-		if st.key != "" {
-			if m.auth == nil {
-				m.auth = config.Auth{}
-			}
-			m.auth[st.id] = st.key
-		}
-		if len(m.cfg.Providers) == 1 {
-			m.cfg.DefaultProvider = st.id
-			m.cfg.DefaultModel = model
-		}
-		if err := m.saveAll(); err != nil {
-			m.entries = append(m.entries, entry{role: "error", content: "save config: " + err.Error()})
-		} else {
-			msg := fmt.Sprintf("✓ Saved provider %q (%s).", st.id, st.kind)
-			if st.key != "" {
-				msg += " Key stored in auth.json."
-			} else if st.kind == "zen" {
-				msg += " (free tier, no key needed)"
-			}
-			if st.kind == "zen" {
-				msg += " Tip: `/models` shows the live list incl. -free models."
-			}
-			m.entries = append(m.entries, entry{role: "system", content: msg})
-		}
+		m.finishConnect(st.id, st.preset, st.base, st.key, model)
 		m.connectSt = nil
 		m.rebuildProvider()
 	}
 	return true
+}
+
+func basePrompt(p *connectPreset, _ string) string {
+	if p.base != "" {
+		return fmt.Sprintf("Base URL? (enter = %s)", p.base)
+	}
+	if p.kind == "zen" && p.id == "zen" {
+		return "Base URL? (enter = Zen default, keyless free tier)"
+	}
+	return "Base URL? (required — e.g. https://openrouter.ai/api/v1)"
+}
+
+func keyPrompt(p *connectPreset) string {
+	if p.keyHint != "" {
+		return fmt.Sprintf("API key? (%s)", p.keyHint)
+	}
+	return "API key? (free tier works WITHOUT a key — enter = none, stored in auth.json if given)"
+}
+
+func modelPrompt(p *connectPreset) string {
+	if p.model != "" {
+		return fmt.Sprintf("Default model? (enter = %s — `/models` lists the live catalog)", p.model)
+	}
+	return "Default model? (e.g. gpt-4o-mini — or enter to pick later via `/models`)"
+}
+
+func (m *Model) finishConnect(id string, p *connectPreset, base, key, model string) {
+	pc := config.ProviderConfig{ID: id, Kind: p.kind, Name: p.name, BaseURL: base, DefaultModel: model, APIKeyRef: "auth:" + id}
+	m.cfg.Providers = append(m.cfg.Providers, pc)
+	if key != "" {
+		if m.auth == nil {
+			m.auth = config.Auth{}
+		}
+		m.auth[id] = key
+	}
+	if len(m.cfg.Providers) == 1 {
+		m.cfg.DefaultProvider = id
+		m.cfg.DefaultModel = model
+	}
+	if err := m.saveAll(); err != nil {
+		m.entries = append(m.entries, entry{role: "error", content: "save config: " + err.Error()})
+		return
+	}
+	msg := fmt.Sprintf("✓ Saved provider %q (%s).", id, p.name)
+	switch {
+	case key != "":
+		msg += " Key stored in auth.json."
+	case p.keyHint == "":
+		msg += " (free tier, no key needed)"
+	}
+	msg += " Tip: `/models` shows the live catalog."
+	m.entries = append(m.entries, entry{role: "system", content: msg})
 }
 
 func defaultModelForKind(kind string) string {
@@ -236,7 +324,7 @@ func (m *Model) runConnectArgs(args []string) {
 // startConnectWizardSilent begins the wizard without duplicating the prompt.
 func (m *Model) startConnectWizardSilent() {
 	m.connectSt = &connectState{step: 0}
-	m.entries = append(m.entries, entry{role: "system", content: "Provider id? (e.g. zen, or `cancel`)"})
+	m.entries = append(m.entries, entry{role: "system", content: connectMenu()})
 }
 
 // --- /models picker ---
@@ -370,6 +458,17 @@ func hasTag(tags []string, want string) bool {
 	return false
 }
 
+// provDisplayName returns the friendly provider name for picker group headers.
+func (m *Model) provDisplayName(id string) string {
+	if pc := findProvider(m.cfg.Providers, id); pc != nil && pc.Name != "" {
+		return pc.Name
+	}
+	if p := findPreset(id); p != nil {
+		return p.name
+	}
+	return id
+}
+
 func (m *Model) selectPickerRow(r pickerRow) {
 	m.cfg.DefaultProvider = r.prov
 	if !strings.HasPrefix(r.model, "(no default") {
@@ -410,6 +509,9 @@ func (m *Model) renderPicker(width int) string {
 	}
 	for i := m.picker.offset; i < len(rows) && i < m.picker.offset+maxRows; i++ {
 		r := rows[i]
+		if i == m.picker.offset || rows[i-1].prov != r.prov {
+			sb.WriteString(dimStyle.Render("── "+m.provDisplayName(r.prov)+" ──") + "\n")
+		}
 		line := fmt.Sprintf("%s / %s", r.prov, r.model)
 		if r.tags != "" {
 			line += "  [" + r.tags + "]"

@@ -22,6 +22,11 @@ func BuildProvider(pc config.ProviderConfig, auth map[string]string) (Provider, 
 		z := ZenPreset(key, pc.DefaultModel)
 		if pc.BaseURL != "" {
 			z.BaseURL = pc.BaseURL
+			if pc.ModelsURL == "" {
+				// Custom base (e.g. Go tier) lists its own models,
+				// not the default Zen catalog.
+				z.ModelsURL = DeriveModelsURL(pc.BaseURL)
+			}
 		}
 		if pc.ModelsURL != "" {
 			z.ModelsURL = pc.ModelsURL
