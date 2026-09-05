@@ -124,7 +124,12 @@ func (m *Model) answerConnect(text string) bool {
 		if err := m.saveAll(); err != nil {
 			m.entries = append(m.entries, entry{role: "error", content: "save config: " + err.Error()})
 		} else {
-			msg := fmt.Sprintf("Saved provider %q (%s). Key stored in auth.json.", st.id, st.kind)
+			msg := fmt.Sprintf("✓ Saved provider %q (%s).", st.id, st.kind)
+			if st.key != "" {
+				msg += " Key stored in auth.json."
+			} else if st.kind == "zen" {
+				msg += " (free tier, no key needed)"
+			}
 			if st.kind == "zen" {
 				msg += " Tip: `/models` shows the live list incl. -free models."
 			}
@@ -178,11 +183,11 @@ func (m *Model) runConnectArgs(args []string) {
 		for _, p := range m.cfg.Providers {
 			mark := " "
 			if p.ID == m.providerID {
-				mark = "*"
+				mark = "✓"
 			}
 			sb.WriteString(fmt.Sprintf("%s %s (%s) default=%s\n", mark, p.ID, p.Kind, p.DefaultModel))
 		}
-		sb.WriteString("Usage: `/connect new` | `/connect <id> <api-key>` | `/connect list`")
+		sb.WriteString("\nUsage: `/connect new` | `/connect <id> <api-key>` | `/connect list`")
 		m.entries = append(m.entries, entry{role: "system", content: strings.TrimRight(sb.String(), "\n")})
 		return
 	}
@@ -196,7 +201,11 @@ func (m *Model) runConnectArgs(args []string) {
 		}
 		var sb strings.Builder
 		for _, p := range m.cfg.Providers {
-			fmt.Fprintf(&sb, "- %s (%s) default=%s\n", p.ID, p.Kind, p.DefaultModel)
+			mark := " "
+			if p.ID == m.providerID {
+				mark = "✓"
+			}
+			fmt.Fprintf(&sb, "%s %s (%s) default=%s\n", mark, p.ID, p.Kind, p.DefaultModel)
 		}
 		m.entries = append(m.entries, entry{role: "system", content: strings.TrimRight(sb.String(), "\n")})
 	default:
@@ -219,7 +228,7 @@ func (m *Model) runConnectArgs(args []string) {
 			m.entries = append(m.entries, entry{role: "error", content: "save auth: " + err.Error()})
 			return
 		}
-		m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("Updated key for %q.", id)})
+		m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("✓ Updated key for %q.", id)})
 		m.rebuildProvider()
 	}
 }
@@ -252,10 +261,10 @@ type modelsFetchedMsg struct {
 func (m *Model) runModelsArgs(args []string) tea.Cmd {
 	if len(args) == 0 {
 		if len(m.cfg.Providers) == 0 {
-			m.entries = append(m.entries, entry{role: "system", content: "No providers yet. Run `/connect new` first (Zen free tier needs no key), then `/models` again."})
+			m.entries = append(m.entries, entry{role: "system", content: "No providers configured. Run `/connect new` first (Zen free tier needs no key), then `/models` again."})
 			return nil
 		}
-		m.entries = append(m.entries, entry{role: "system", content: "Fetching models…"})
+		m.entries = append(m.entries, entry{role: "system", content: "Fetching models from " + fmt.Sprintf("%d provider(s)…", len(m.cfg.Providers))})
 		m.pickerPending = true
 		return m.fetchModelsCmd()
 	}
@@ -293,7 +302,7 @@ func (m *Model) runModelsArgs(args []string) tea.Cmd {
 	}
 	m.providerID = provID
 	m.rebuildProvider()
-	m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("Active: %s / %s", m.providerID, m.modelID)})
+	m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("✓ Active: %s / %s", m.providerID, m.modelID)})
 	return nil
 }
 
@@ -310,12 +319,13 @@ func (m *Model) fetchModelsCmd() tea.Cmd {
 		for _, pc := range provs {
 			p, err := provider.BuildProvider(pc, auth)
 			if err != nil {
-				out.errs[pc.ID] = err.Error()
+				out.errs[pc.ID] = "provider init failed: " + err.Error()
 				continue
 			}
 			models, err := p.ListModels(ctx)
 			if err != nil {
 				out.errs[pc.ID] = err.Error()
+				// Fallback to default model if available.
 				if pc.DefaultModel != "" {
 					out.models[pc.ID] = []provider.Model{{ID: pc.DefaultModel}}
 				}
@@ -368,7 +378,7 @@ func (m *Model) selectPickerRow(r pickerRow) {
 	if err := m.saveAll(); err != nil {
 		m.entries = append(m.entries, entry{role: "error", content: "save config: " + err.Error()})
 	} else {
-		m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("Active: %s / %s", m.cfg.DefaultProvider, m.cfg.DefaultModel)})
+		m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("✓ Selected: %s / %s", m.cfg.DefaultProvider, m.cfg.DefaultModel)})
 	}
 	m.picker = nil
 	m.providerID = r.prov
@@ -376,12 +386,12 @@ func (m *Model) selectPickerRow(r pickerRow) {
 }
 
 func (m *Model) renderPicker(width int) string {
-	title := "models — ↑↓/jk move • enter select • esc close • * = active"
+	title := "models — ↑↓/jk move • enter select • esc close • ✓ = active"
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render(title) + "\n")
 	rows := m.picker.rows
 	if len(rows) == 0 {
-		sb.WriteString(hintStyle.Render("No models. /connect to add a provider.") + "\n")
+		sb.WriteString(hintStyle.Render("No models. Run /connect to add a provider, then /models again.") + "\n")
 		return panelStyle.Width(width - 4).Render(sb.String())
 	}
 	// Scroll window.
@@ -405,7 +415,7 @@ func (m *Model) renderPicker(width int) string {
 			line += "  [" + r.tags + "]"
 		}
 		if r.prov == m.providerID && r.model == m.modelID {
-			line += "  *"
+			line += "  ✓"
 		}
 		if i == m.picker.cursor {
 			line = "> " + line
