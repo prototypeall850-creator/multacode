@@ -20,24 +20,25 @@ import (
 // BaseURL saved for the provider ("" = preset built-in default).
 // KeyHint tells the user where to get the key; empty = no key needed.
 type connectPreset struct {
-	id      string
-	name    string
-	popular bool // false = under PROVIDER LAIN
-	kind    string
-	base    string
-	model   string
-	keyHint string
-	custom  bool // custom base/key/model: ask id + require base
+	id       string
+	name     string
+	popular  bool // false = under PROVIDER LAIN
+	kind     string
+	base     string
+	model    string
+	keyHint  string
+	custom   bool // custom base/key/model: ask id + require base
+	needsKey bool // empty key rejected: user must paste a key or cancel
 }
 
 var connectPresets = []connectPreset{
 	{id: "zen", name: "Opencode Zen (free)", popular: true, kind: "zen", base: "", model: "nemotron-3-ultra-free"},
-	{id: "go", name: "Opencode Go", popular: true, kind: "zen", base: "https://opencode.ai/zen/go/v1", model: "claude-sonnet-4-6", keyHint: "API key from opencode.ai (login → API keys, Go subscription)"},
-	{id: "openai", name: "OpenAI", popular: true, kind: "openai-compatible", base: "https://api.openai.com/v1", model: "gpt-4o-mini", keyHint: "sk-... from platform.openai.com → API keys"},
-	{id: "copilot", name: "Github Copilot", popular: true, kind: "openai-compatible", base: "https://api.githubcopilot.com", model: "gpt-4o", keyHint: "token from `gh auth token` (GitHub CLI, needs Copilot access) — experimental"},
-	{id: "anthropic", name: "Anthropic", popular: true, kind: "anthropic", base: "https://api.anthropic.com", model: "claude-sonnet-4-6", keyHint: "sk-ant-... from console.anthropic.com → API keys"},
-	{id: "google", name: "Google", popular: true, kind: "openai-compatible", base: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash", keyHint: "key from aistudio.google.com → Get API key"},
-	{id: "meta", name: "Meta", popular: true, kind: "openai-compatible", base: "https://api.meta.ai/v1", model: "muse-spark-1.3", keyHint: "MODEL_API_KEY from developer.meta.com"},
+	{id: "go", name: "Opencode Go", popular: true, kind: "zen", base: "https://opencode.ai/zen/go/v1", model: "claude-sonnet-4-6", keyHint: "API key from opencode.ai (login → API keys, Go subscription)", needsKey: true},
+	{id: "openai", name: "OpenAI", popular: true, kind: "openai-compatible", base: "https://api.openai.com/v1", model: "gpt-4o-mini", keyHint: "sk-... from platform.openai.com → API keys", needsKey: true},
+	{id: "copilot", name: "Github Copilot", popular: true, kind: "openai-compatible", base: "https://api.githubcopilot.com", model: "gpt-4o", keyHint: "token from `gh auth token` (GitHub CLI, needs Copilot access) — experimental", needsKey: true},
+	{id: "anthropic", name: "Anthropic", popular: true, kind: "anthropic", base: "https://api.anthropic.com", model: "claude-sonnet-4-6", keyHint: "sk-ant-... from console.anthropic.com → API keys", needsKey: true},
+	{id: "google", name: "Google", popular: true, kind: "openai-compatible", base: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash", keyHint: "key from aistudio.google.com → Get API key", needsKey: true},
+	{id: "meta", name: "Meta", popular: true, kind: "openai-compatible", base: "https://api.meta.ai/v1", model: "muse-spark-1.3", keyHint: "MODEL_API_KEY from developer.meta.com", needsKey: true},
 	{id: "oai-custom", name: "OpenAI-compatible", popular: false, kind: "openai-compatible", keyHint: "API key for your endpoint (stored in auth.json; enter = none)", custom: true},
 	{id: "ant-custom", name: "Anthropic-compatible", popular: false, kind: "anthropic", keyHint: "API key for your endpoint (stored in auth.json; enter = none)", custom: true},
 }
@@ -69,7 +70,7 @@ func connectMenu() string {
 		if !p.popular {
 			continue
 		}
-		extra := ""
+		extra := " — needs API key"
 		if p.keyHint == "" {
 			extra = " — no key needed"
 		}
@@ -160,7 +161,12 @@ func (m *Model) answerConnect(text string) bool {
 		m.entries = append(m.entries, entry{role: "system", content: keyPrompt(st.preset)})
 		return true
 	case 3: // api key
-		st.key = strings.TrimSpace(text)
+		key := strings.TrimSpace(text)
+		if key == "" && st.preset.needsKey {
+			m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("%s needs an API key — without it the provider can't respond. %s Paste the key, or `cancel`.", st.preset.name, keyPrompt(st.preset))})
+			return true
+		}
+		st.key = key
 		m.redactLastUser()
 		st.step = 4
 		m.entries = append(m.entries, entry{role: "system", content: modelPrompt(st.preset)})

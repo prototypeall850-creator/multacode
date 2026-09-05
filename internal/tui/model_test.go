@@ -394,3 +394,33 @@ func TestConnectWizardCustomRequiresBase(t *testing.T) {
 		t.Fatalf("pc = %+v", m.cfg.Providers[0])
 	}
 }
+
+func TestConnectWizardKeyRequired(t *testing.T) {
+	m := NewModelWithOptions(Options{ProjectDir: "/tmp"})
+	m.width, m.height = 80, 30
+	m.resize()
+	m = sendLine(t, m, "/connect new")
+	m = sendLine(t, m, "openai")
+	m = sendLine(t, m, "") // base -> preset default
+	m = sendLine(t, m, "") // key empty -> must be rejected
+	if m.connectSt == nil || m.connectSt.step != 3 {
+		t.Fatalf("keyed preset must reject empty key, st=%+v", m.connectSt)
+	}
+	found := false
+	for _, e := range m.entries {
+		if strings.Contains(e.content, "needs an API key") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("must instruct where to get the key")
+	}
+	m = sendLine(t, m, "sk-test")
+	m = sendLine(t, m, "")
+	if m.connectSt != nil {
+		t.Fatal("wizard should finish after key given")
+	}
+	if m.auth["openai"] != "sk-test" {
+		t.Fatalf("auth = %+v", m.auth)
+	}
+}
