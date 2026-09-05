@@ -129,7 +129,7 @@ func TestConnectWizardZen(t *testing.T) {
 	m = sendLine(t, m, "")    // kind -> default zen
 	m = sendLine(t, m, "")    // base -> zen default
 	m = sendLine(t, m, "k1")  // key (redacted)
-	m = sendLine(t, m, "")    // model -> default glm-4.7-free
+	m = sendLine(t, m, "")    // model -> default deepseek-v4-flash-free
 	if m.connectSt != nil {
 		t.Fatal("wizard should finish")
 	}
@@ -139,7 +139,7 @@ func TestConnectWizardZen(t *testing.T) {
 	if m.auth["zen"] != "k1" {
 		t.Fatalf("auth = %+v", m.auth)
 	}
-	if m.providerID != "zen" || m.modelID != "glm-4.7-free" {
+	if m.providerID != "zen" || m.modelID != "deepseek-v4-flash-free" {
 		t.Fatalf("active = %s/%s", m.providerID, m.modelID)
 	}
 	// Key must be redacted from transcript.
@@ -206,5 +206,28 @@ func TestModelsPickerOpensFromFetch(t *testing.T) {
 	}
 	if mm.providerID != "zen" || mm.modelID != "glm-5" {
 		t.Fatalf("active = %s/%s", mm.providerID, mm.modelID)
+	}
+}
+
+func TestModelsPickerFreeFirst(t *testing.T) {
+	m := NewModelWithOptions(Options{ProjectDir: "/tmp", Config: config.Config{
+		Providers: []config.ProviderConfig{{ID: "zen", Kind: "zen", DefaultModel: "deepseek-v4-flash-free"}},
+	}})
+	m.width, m.height = 80, 30
+	m.resize()
+	m.pickerPending = true
+	updated, _ := m.Update(modelsFetchedMsg{models: map[string][]provider.Model{
+		"zen": {
+			{ID: "claude-opus-4-6"},
+			{ID: "mimo-v2.5-free", Tags: []string{"free"}},
+			{ID: "gpt-5.5"},
+		},
+	}})
+	mm := updated.(Model)
+	if mm.picker == nil || len(mm.picker.rows) != 3 {
+		t.Fatalf("picker = %+v", mm.picker)
+	}
+	if mm.picker.rows[0].model != "mimo-v2.5-free" {
+		t.Fatalf("free model should lead: %+v", mm.picker.rows)
 	}
 }

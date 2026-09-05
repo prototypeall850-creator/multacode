@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -119,7 +120,11 @@ func (m *Model) answerConnect(text string) bool {
 		if err := m.saveAll(); err != nil {
 			m.entries = append(m.entries, entry{role: "error", content: "save config: " + err.Error()})
 		} else {
-			m.entries = append(m.entries, entry{role: "system", content: fmt.Sprintf("Saved provider %q (%s). Key stored in auth.json.", st.id, st.kind)})
+			msg := fmt.Sprintf("Saved provider %q (%s). Key stored in auth.json.", st.id, st.kind)
+			if st.kind == "zen" {
+				msg += " Tip: `/models` shows the live list incl. -free models."
+			}
+			m.entries = append(m.entries, entry{role: "system", content: msg})
 		}
 		m.connectSt = nil
 		m.rebuildProvider()
@@ -130,7 +135,7 @@ func (m *Model) answerConnect(text string) bool {
 func defaultModelForKind(kind string) string {
 	switch kind {
 	case "zen":
-		return "glm-4.7-free"
+		return "deepseek-v4-flash-free"
 	case "anthropic":
 		return "claude-sonnet-4-6"
 	default:
@@ -326,11 +331,25 @@ func (m *Model) buildPickerRows() []pickerRow {
 			rows = append(rows, pickerRow{prov: pc.ID, model: def})
 			continue
 		}
-		for _, mdl := range models {
+		// Free models first: most users on Zen come for the -free list.
+		ordered := append([]provider.Model(nil), models...)
+		sort.SliceStable(ordered, func(i, j int) bool {
+			return hasTag(ordered[i].Tags, "free") && !hasTag(ordered[j].Tags, "free")
+		})
+		for _, mdl := range ordered {
 			rows = append(rows, pickerRow{prov: pc.ID, model: mdl.ID, tags: strings.Join(mdl.Tags, ",")})
 		}
 	}
 	return rows
+}
+
+func hasTag(tags []string, want string) bool {
+	for _, t := range tags {
+		if t == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) selectPickerRow(r pickerRow) {
