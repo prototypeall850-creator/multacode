@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"multacode/internal/config"
@@ -59,5 +60,20 @@ func TestSetupNeverOverwrites(t *testing.T) {
 	}
 	if got.DefaultModel != "milik-saya" {
 		t.Fatalf("setup overwrote config: %+v", got)
+	}
+}
+
+func TestUpdateSrcDirOverride(t *testing.T) {
+	t.Setenv("MULTACODE_SRC", "/tmp/custom-src")
+	if got := updateSrcDir(); got != "/tmp/custom-src" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestUpdateRefusesNonRepo(t *testing.T) {
+	dir := t.TempDir() // bukan git clone
+	err := runUpdate(dir, filepath.Join(dir, "multacode"))
+	if err == nil || !strings.Contains(err.Error(), "bukan git clone") {
+		t.Fatalf("err = %v", err)
 	}
 }

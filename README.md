@@ -12,6 +12,18 @@ antara mode planning yang aman dan mode build. Sesi tersimpan lokal.
 
 Syarat: Go 1.24.2+ (Termux: `pkg install golang git`).
 
+Cara cepat (Termux):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/prototypeall850-creator/multacode/main/install.sh | bash
+```
+
+Script itu: install `golang`+`git` via pkg, kunci `GOTOOLCHAIN=local`
+(toolchain resmi tidak ada untuk host Android), clone/update `~/multacode`,
+build, symlink ke `$PREFIX/bin`, lalu `--setup`.
+
+Cara manual:
+
 ```sh
 git clone https://github.com/prototypeall850-creator/multacode.git ~/multacode
 cd ~/multacode
@@ -38,10 +50,18 @@ multacode --setup   # 3. cukup sekali: bikin config global
 multacode           # 4. pakai dari folder mana pun (cd ~/1, ~/2, ...)
 ```
 
+Update lain kali (tanpa git manual):
+
+```sh
+multacode update    # git pull + rebuild binary di tempat
+```
+
 > `--setup` menyiapkan config global ikut standar XDG
 > (`~/.config/multacode/`, `~/.local/share/multacode/`) —
 > **cukup sekali**, berlaku untuk semua folder kerja.
 > Folder kerja tinggal `cd` + ketik `multacode`, tanpa setup ulang.
+> Lokasi source untuk `update` default `~/multacode`, bisa dioverride
+> via `MULTACODE_SRC`.
 
 Tanpa daemon, tanpa Docker, tanpa Node/Bun. Jalan di terminal sempit (40 kolom).
 

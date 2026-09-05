@@ -30,6 +30,18 @@ func main() {
 		}
 		return
 	}
+	if flag.NArg() > 0 && flag.Arg(0) == "update" {
+		self, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "multacode: update: %v\n", err)
+			os.Exit(1)
+		}
+		if err := runUpdate(updateSrcDir(), self); err != nil {
+			fmt.Fprintf(os.Stderr, "multacode: update: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	dir := "."
 	if flag.NArg() > 0 {
@@ -76,6 +88,7 @@ func printHelp() {
 
 Usage:
   multacode [dir] [flags]
+  multacode update      pull source terbaru + rebuild binary
 
 Flags:
   -h, --help   show help
