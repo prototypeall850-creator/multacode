@@ -1,75 +1,112 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"multacode/internal/config"
 	"multacode/internal/session"
 	"multacode/internal/tui"
 )
 
+// version bisa dioverride saat build:
+// go build -ldflags "-X main.version=1.2.3" ./cmd/multacode
+var version = "dev"
+
 func main() {
-	var showHelp, doSetup bool
-	flag.BoolVar(&showHelp, "help", false, "show help")
-	flag.BoolVar(&showHelp, "h", false, "show help")
-	flag.BoolVar(&doSetup, "setup", false, "create global config dirs/files once, then exit")
-	flag.Parse()
+	if err := newRootCmd().Execute(); err != nil {
+		os.Exit(1)
+	}
+}
 
-	if showHelp {
-		printHelp()
-		return
-	}
+// newRootCmd merangkai pohon CLI:
+// multacode [dir]  -> buka TUI (default folder kerja saat ini)
+// multacode setup  -> bikin config global sekali, lalu keluar
+// multacode update -> git pull + rebuild binary di tempat
+// multacode version -> tampilkan versi binary
+func newRootCmd() *cobra.Command {
+	var setupFlag bool
+	root := &cobra.Command{
+		Use:   "multacode [dir]",
+		Short: "Agentic coding TUI for Termux",
+		Long: `multacode - agentic coding TUI for Termux.
 
-	paths := config.ResolvePaths()
-	if doSetup {
-		if err := runSetup(paths); err != nil {
-			fmt.Fprintf(os.Stderr, "multacode: setup: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-	if flag.NArg() > 0 && flag.Arg(0) == "update" {
-		self, err := os.Executable()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "multacode: update: %v\n", err)
-			os.Exit(1)
-		}
-		if err := runUpdate(updateSrcDir(), self); err != nil {
-			fmt.Fprintf(os.Stderr, "multacode: update: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
+Tanpa argumen: buka TUI dari folder kerja saat ini.
+Dengan argumen: buka TUI untuk folder tersebut.
 
-	dir := "."
-	if flag.NArg() > 0 {
-		dir = flag.Arg(0)
+Slash commands (di dalam TUI):
+  /help /connect /models /sessions /new /agent
+  /permissions /soul /search /fetch /compact /doctor /exit`,
+		Args:         cobra.MaximumNArgs(1),
+		SilenceUsage: true, // error runtime tidak perlu dimuntahkan usage
+		RunE: func(cmd *cobra.Command, args []string) error {
+			paths := config.ResolvePaths()
+			if setupFlag {
+				return runSetup(paths)
+			}
+			dir := "."
+			if len(args) > 0 {
+				dir = args[0]
+			}
+			return runTUI(paths, dir)
+		},
 	}
+	// Kompat lama: `multacode --setup` tetap jalan, tapi diarahkan ke subcommand.
+	root.PersistentFlags().BoolVar(&setupFlag, "setup", false, "create global config dirs/files once, then exit")
+	_ = root.PersistentFlags().MarkDeprecated("setup", "pakai `multacode setup`")
+	root.AddCommand(newSetupCmd(), newUpdateCmd(), newVersionCmd())
+	return root
+}
+
+func newSetupCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "setup",
+		Short: "Bikin config global sekali, lalu keluar",
+		Long: `Idempotent: bikin XDG dirs + seed files sekali.
+Tidak pernah menimpa config yang sudah ada. Berlaku untuk semua folder kerja.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSetup(config.ResolvePaths())
+		},
+	}
+}
+
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Tampilkan versi binary",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("multacode " + version)
+		},
+	}
+}
+
+// runTUI membuka TUI untuk satu folder proyek: resolve dir, load config/auth,
+// migrasi default mati, lalu jalan. Error dibungkus prefix "multacode:" agar
+// konsisten dengan pesan CLI lain (cobra yang mencetak ke stderr).
+func runTUI(paths config.Paths, dir string) error {
 	abs, err := config.ResolveProjectDir(dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "multacode: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("multacode: %w", err)
 	}
 
 	cfg, err := config.Load(paths.ConfigFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "multacode: load config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("multacode: load config: %w", err)
 	}
 	if migrateDeadDefaults(&cfg) {
 		if err := config.Save(paths.ConfigFile, cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "multacode: migrate config: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("multacode: migrate config: %w", err)
 		}
 		fmt.Println("config: dead default model replaced with nemotron-3-ultra-free")
 	}
 	auth, err := config.LoadAuth(paths.AuthFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "multacode: load auth: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("multacode: load auth: %w", err)
 	}
 
 	notice := ""
@@ -86,25 +123,9 @@ func main() {
 		Auth:       auth,
 		Notice:     notice,
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "multacode: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("multacode: %w", err)
 	}
-}
-
-func printHelp() {
-	fmt.Println(`multacode - agentic coding TUI for Termux
-
-Usage:
-  multacode [dir] [flags]
-  multacode update      pull source terbaru + rebuild binary
-
-Flags:
-  -h, --help   show help
-  --setup      create global config dirs/files once, then exit
-
-Slash commands (inside TUI):
-  /help /connect /models /sessions /new /agent
-  /permissions /soul /search /fetch /compact /doctor /exit`)
+	return nil
 }
 
 // migrateDeadDefaults swaps model IDs that no longer exist on Zen for a

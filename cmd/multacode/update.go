@@ -9,7 +9,27 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
+
+// newUpdateCmd membungkus runUpdate sebagai subcommand `multacode update`,
+// agar Termux tidak perlu mengetik git command manual.
+// Lokasi source default ~/multacode, override via MULTACODE_SRC.
+func newUpdateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "update",
+		Short: "Pull source terbaru + rebuild binary di tempat",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			self, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("multacode: update: %w", err)
+			}
+			return runUpdate(updateSrcDir(), self)
+		},
+	}
+}
 
 // updateSrcDir returns the git checkout `multacode update` refreshes.
 // Override with MULTACODE_SRC; default ~/multacode.

@@ -46,7 +46,7 @@ ln -s "$PWD/multacode" ~/.local/bin/multacode  # pastikan ~/.local/bin ada di PA
 Lalu setup sekali seumur hidup, pakai dari folder mana pun:
 
 ```sh
-multacode --setup   # 3. cukup sekali: bikin config global
+multacode setup     # 3. cukup sekali: bikin config global
 multacode           # 4. pakai dari folder mana pun (cd ~/1, ~/2, ...)
 ```
 
@@ -56,7 +56,7 @@ Update lain kali (tanpa git manual):
 multacode update    # git pull + rebuild binary di tempat
 ```
 
-> `--setup` menyiapkan config global ikut standar XDG
+> `setup` menyiapkan config global ikut standar XDG
 > (`~/.config/multacode/`, `~/.local/share/multacode/`) —
 > **cukup sekali**, berlaku untuk semua folder kerja.
 > Folder kerja tinggal `cd` + ketik `multacode`, tanpa setup ulang.
